@@ -186,8 +186,8 @@ func searchDocs(docs []KnowledgeDoc, query string, limit int) []QueryResult {
 		score, reasons := scoreDoc(doc, query)
 		if score > 0 {
 			doc.Score = score
-			doc.Reason = reasons
-			results = append(results, QueryResult{Doc: doc, Score: score})
+			doc.Reason = reasonLabels(reasons)
+			results = append(results, QueryResult{Doc: doc, Score: score, MatchReasons: reasons})
 		}
 	}
 	sort.Slice(results, func(i, j int) bool {
@@ -202,49 +202,84 @@ func searchDocs(docs []KnowledgeDoc, query string, limit int) []QueryResult {
 	return results
 }
 
-func scoreDoc(doc KnowledgeDoc, query string) (int, []string) {
+func scoreDoc(doc KnowledgeDoc, query string) (int, []MatchReason) {
 	lowerQuery := strings.ToLower(query)
 	score := 0
-	var reasons []string
-	add := func(points int, reason string) {
-		score += points
+	var reasons []MatchReason
+	add := func(reason MatchReason) {
+		score += reason.Score
 		reasons = append(reasons, reason)
 	}
 	if strings.EqualFold(doc.ID, query) {
-		add(100, "id exact")
+		add(MatchReason{Field: "id", Value: doc.ID, Score: 100})
 	}
 	if containsFold(doc.Title, query) {
-		add(30, "title")
+		add(MatchReason{Field: "title", Value: doc.Title, Score: 30})
 	}
 	if containsFold(stringField(doc.Raw, "business_action"), query) {
-		add(30, "business_action")
+		add(MatchReason{Field: "business_action", Value: stringField(doc.Raw, "business_action"), Score: 30})
 	}
 	for _, key := range []string{"aliases", "prd_keywords"} {
-		for _, val := range stringList(doc.Raw[key]) {
+		for i, val := range stringList(doc.Raw[key]) {
 			if containsFold(val, query) || containsFold(query, val) {
-				add(25, key+":"+val)
+				add(MatchReason{Field: fmt.Sprintf("%s[%d]", key, i), Value: val, Score: 25})
 			}
 		}
 	}
-	for _, rpc := range doc.RPCs {
-		if strings.EqualFold(rpc, query) || strings.Contains(strings.ToLower(rpc), lowerQuery) {
-			add(20, "rpc:"+rpc)
+	for _, ref := range collectRPCRefsWithSource(doc.Raw) {
+		if strings.EqualFold(ref.RPC, query) || strings.Contains(strings.ToLower(ref.RPC), lowerQuery) {
+			field := ref.SourceField
+			if field == "" {
+				field = "rpc"
+			}
+			add(MatchReason{Field: field, Value: ref.RPC, Score: 20})
 		}
 	}
 	text := strings.ToLower(flattenStrings(doc.Raw))
 	textScore := 0
+	var matched []string
 	for _, token := range queryTokens(query) {
 		if token != "" && strings.Contains(text, strings.ToLower(token)) {
 			textScore += 3
+			matched = append(matched, token)
 		}
 	}
 	if textScore > 0 {
 		if textScore > 30 {
 			textScore = 30
 		}
-		add(textScore, "text")
+		add(MatchReason{Field: "text", Tokens: compactStrings(matched), Score: textScore})
 	}
-	return score, compactStrings(reasons)
+	return score, compactMatchReasons(reasons)
+}
+
+func compactMatchReasons(in []MatchReason) []MatchReason {
+	seen := map[string]struct{}{}
+	var out []MatchReason
+	for _, reason := range in {
+		key := reason.Field + "\x00" + reason.Value + "\x00" + strings.Join(reason.Tokens, "\x00")
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		out = append(out, reason)
+	}
+	return out
+}
+
+func reasonLabels(reasons []MatchReason) []string {
+	var labels []string
+	for _, reason := range reasons {
+		switch {
+		case reason.Value != "":
+			labels = append(labels, reason.Field+":"+reason.Value)
+		case len(reason.Tokens) > 0:
+			labels = append(labels, reason.Field+":"+strings.Join(reason.Tokens, "/"))
+		default:
+			labels = append(labels, reason.Field)
+		}
+	}
+	return compactStrings(labels)
 }
 
 func containsFold(haystack, needle string) bool {

@@ -28,6 +28,8 @@ func Run(args []string, stdout, stderr io.Writer) int {
 		return cmdQuery(args[1:], stdout, stderr)
 	case "pack":
 		return cmdPack(args[1:], stdout, stderr)
+	case "graph":
+		return cmdGraph(args[1:], stdout, stderr)
 	case "add":
 		return cmdAdd(args[1:], stdout, stderr)
 	case "accept":
@@ -49,8 +51,9 @@ Usage:
   ai-context init [--force]
   ai-context resolve [--config .ai-context/config.json] Service.Method
   ai-context validate [--config .ai-context/config.json]
-  ai-context query [--config .ai-context/config.json] [--limit 10] "业务词或 PRD 片段"
+  ai-context query [--config .ai-context/config.json] [--limit 10] [--json] [--include-raw] "业务词或 PRD 片段"
   ai-context pack [--config .ai-context/config.json] [--limit 5] "任务描述"
+  ai-context graph [--config .ai-context/config.json] [--output .ai-context/graph.json]
   ai-context add [--config .ai-context/config.json] --type decision --id id --title title "note"
   ai-context accept [--config .ai-context/config.json] .ai-context/pending/file.json`)
 }
@@ -191,6 +194,9 @@ func cmdQuery(args []string, stdout, stderr io.Writer) int {
 	fs.SetOutput(stderr)
 	configPath := fs.String("config", defaultConfigPath, "config path")
 	limit := fs.Int("limit", 10, "max results")
+	jsonOutput := fs.Bool("json", false, "print machine-readable JSON")
+	includeRaw := fs.Bool("include-raw", false, "include raw knowledge card JSON in --json output")
+	includePending := fs.Bool("include-pending", false, "include pending knowledge files")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
@@ -199,17 +205,21 @@ func cmdQuery(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stderr, "query requires text")
 		return 2
 	}
-	cfg, repoRoot, err := loadConfig(*configPath)
+	cfg, repoRoot, rpcIndex, ok := loadRuntime(*configPath, stderr)
+	if !ok {
+		return 1
+	}
+	docs, err := loadKnowledge(resolvePath(repoRoot, cfg.Knowledge.Root), *includePending)
 	if err != nil {
 		fmt.Fprintln(stderr, err)
 		return 1
 	}
-	docs, err := loadKnowledge(resolvePath(repoRoot, cfg.Knowledge.Root), false)
-	if err != nil {
-		fmt.Fprintln(stderr, err)
-		return 1
+	allResults := searchDocs(docs, query, 0)
+	results := limitQueryResults(allResults, *limit)
+	if *jsonOutput {
+		printJSON(stdout, buildQueryOutput(repoRoot, query, *limit, *includePending, *includeRaw, len(allResults), results, rpcIndex))
+		return 0
 	}
-	results := searchDocs(docs, query, *limit)
 	if len(results) == 0 {
 		fmt.Fprintf(stdout, "no match for %q\n", query)
 		return 0
@@ -224,8 +234,15 @@ func cmdQuery(args []string, stdout, stderr io.Writer) int {
 		if len(doc.Reason) > 0 {
 			fmt.Fprintf(stdout, "   match: %s\n", strings.Join(doc.Reason, ", "))
 		}
-		if len(doc.RPCs) > 0 {
-			fmt.Fprintf(stdout, "   rpc: %s\n", strings.Join(doc.RPCs, ", "))
+		rpcs := queryRPCsForDoc(doc, repoRoot, rpcIndex)
+		if len(rpcs.Positive) > 0 {
+			fmt.Fprintf(stdout, "   rpc: %s\n", strings.Join(queryRPCNames(rpcs.Positive), ", "))
+		}
+		if len(rpcs.Avoid) > 0 {
+			fmt.Fprintf(stdout, "   avoid_rpc: %s\n", strings.Join(queryRPCNamesWithReason(rpcs.Avoid), ", "))
+		}
+		if len(rpcs.Unknown) > 0 {
+			fmt.Fprintf(stdout, "   unknown_rpc: %s\n", strings.Join(queryRPCNames(rpcs.Unknown), ", "))
 		}
 		fmt.Fprintf(stdout, "   file: %s\n", relOrSame(repoRoot, doc.Path))
 	}
@@ -313,6 +330,54 @@ func cmdPack(args []string, stdout, stderr io.Writer) int {
 			fmt.Fprintf(stdout, "- %s contract: %s\n", doc.ID, item)
 		}
 	}
+	return 0
+}
+
+func cmdGraph(args []string, stdout, stderr io.Writer) int {
+	fs := flag.NewFlagSet("graph", flag.ContinueOnError)
+	fs.SetOutput(stderr)
+	configPath := fs.String("config", defaultConfigPath, "config path")
+	output := fs.String("output", "", "output graph path")
+	if err := fs.Parse(args); err != nil {
+		return 2
+	}
+	cfg, repoRoot, rpcIndex, ok := loadRuntime(*configPath, stderr)
+	if !ok {
+		return 1
+	}
+	docs, err := loadKnowledge(resolvePath(repoRoot, cfg.Knowledge.Root), false)
+	if err != nil {
+		fmt.Fprintln(stderr, err)
+		return 1
+	}
+	issues := validateKnowledge(docs, rpcIndex)
+	for _, issue := range issues {
+		fmt.Fprintf(stdout, "%s %s: %s\n", strings.ToUpper(issue.Level), relOrSame(repoRoot, issue.Path), issue.Message)
+	}
+	if hasErrors(issues) {
+		fmt.Fprintln(stdout, "graph aborted: validation failed")
+		return 1
+	}
+	graph := buildContextGraph(repoRoot, docs, rpcIndex)
+	graphIssues := validateContextGraph(graph)
+	for _, issue := range graphIssues {
+		fmt.Fprintf(stdout, "%s %s: %s\n", strings.ToUpper(issue.Level), relOrSame(repoRoot, issue.Path), issue.Message)
+	}
+	if hasErrors(graphIssues) {
+		fmt.Fprintln(stdout, "graph aborted: graph validation failed")
+		return 1
+	}
+	outputPath := *output
+	if outputPath == "" {
+		outputPath = filepath.Join(resolvePath(repoRoot, cfg.Knowledge.Root), "graph.json")
+	} else {
+		outputPath = resolvePath(repoRoot, outputPath)
+	}
+	if err := writeJSONFile(outputPath, graph, true); err != nil {
+		fmt.Fprintln(stderr, err)
+		return 1
+	}
+	fmt.Fprintf(stdout, "wrote %s: %d node(s), %d edge(s)\n", relOrSame(repoRoot, outputPath), len(graph.Nodes), len(graph.Edges))
 	return 0
 }
 
