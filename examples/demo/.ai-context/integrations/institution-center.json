@@ -1,0 +1,29 @@
+{
+  "type": "integration",
+  "id": "institution-center",
+  "title": "机构号中台",
+  "request_entry": {
+    "rpc": "InstitutionService.VerifyInstitution"
+  },
+  "callback_entry": {
+    "rpc": "MerchantService.SubmitInstitutionVerifyResult"
+  },
+  "contracts": [
+    "verify_request_id 必须全链路透传。",
+    "回调必须幂等。",
+    "回调幂等 key 必须使用 verify_request_id，不能使用 merchant_id。"
+  ],
+  "related_capabilities": [
+    "merchant.onboarding"
+  ],
+  "related_actions": [
+    "institution.verify.start",
+    "institution.verify.callback"
+  ],
+  "related_flows": [
+    "institution.verify.flow"
+  ],
+  "related_runbooks": [
+    "institution-verify-callback-timeout"
+  ]
+}

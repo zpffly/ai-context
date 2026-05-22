@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "idl": {
+    "root": "./idl",
+    "include": [
+      "**/*.thrift"
+    ]
+  },
+  "knowledge": {
+    "root": ".ai-context"
+  }
+}

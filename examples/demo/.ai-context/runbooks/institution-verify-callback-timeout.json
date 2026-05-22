@@ -1,0 +1,30 @@
+{
+  "type": "runbook",
+  "id": "institution-verify-callback-timeout",
+  "title": "机构号中台回调超时排查",
+  "symptoms": [
+    "机构校验长时间停留在 PROCESSING",
+    "机构号中台回调超时告警触发"
+  ],
+  "checks": [
+    "确认请求是否成功发到机构号中台。",
+    "确认中台是否已回调。",
+    "确认业务方是否因为幂等冲突拒绝回调。"
+  ],
+  "mitigation": [
+    "对确认成功但回调丢失的请求，走人工补偿任务。",
+    "不要直接手改商户认证状态。"
+  ],
+  "related_capabilities": [
+    "merchant.onboarding"
+  ],
+  "related_actions": [
+    "institution.verify.callback"
+  ],
+  "related_flows": [
+    "institution.verify.flow"
+  ],
+  "related_integrations": [
+    "institution-center"
+  ]
+}

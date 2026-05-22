@@ -1,0 +1,23 @@
+{
+  "type": "rpc_mapping",
+  "id": "institution.verify.start",
+  "title": "发起机构号校验",
+  "business_action": "发起机构号校验",
+  "aliases": [
+    "请求机构号中台",
+    "校验机构号",
+    "机构号认证"
+  ],
+  "primary_rpc": [
+    "InstitutionService.VerifyInstitution"
+  ],
+  "related_capabilities": [
+    "merchant.onboarding"
+  ],
+  "related_flows": [
+    "institution.verify.flow"
+  ],
+  "conditions": [
+    "发起校验走 InstitutionService.VerifyInstitution。"
+  ]
+}

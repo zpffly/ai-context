@@ -1,0 +1,29 @@
+{
+  "type": "rpc_mapping",
+  "id": "institution.verify.callback",
+  "title": "处理机构号中台回调",
+  "business_action": "处理机构号中台回调",
+  "aliases": [
+    "机构号回调",
+    "校验结果回调",
+    "机构号中台回调"
+  ],
+  "primary_rpc": [
+    "MerchantService.SubmitInstitutionVerifyResult"
+  ],
+  "avoid_rpc": [
+    {
+      "rpc": "MerchantService.UpdateMerchant",
+      "reason": "这是更新商户基础信息，不是机构号校验回调入口。"
+    }
+  ],
+  "related_capabilities": [
+    "merchant.onboarding"
+  ],
+  "related_flows": [
+    "institution.verify.flow"
+  ],
+  "conditions": [
+    "接收中台校验结果走 MerchantService.SubmitInstitutionVerifyResult。"
+  ]
+}

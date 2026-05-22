@@ -1,0 +1,38 @@
+{
+  "type": "capability",
+  "id": "merchant.onboarding",
+  "title": "商户入驻",
+  "aliases": [
+    "商户准入",
+    "商家入驻",
+    "入驻流程"
+  ],
+  "prd_keywords": [
+    "商户入驻",
+    "资质提交",
+    "机构认证",
+    "机构号校验",
+    "准入"
+  ],
+  "scope": "商户从提交资料到完成准入的主流程。",
+  "owning_services": [
+    "merchant-service",
+    "institution-service"
+  ],
+  "related_actions": [
+    "institution.verify.start",
+    "institution.verify.callback"
+  ],
+  "related_flows": [
+    "institution.verify.flow"
+  ],
+  "related_integrations": [
+    "institution-center"
+  ],
+  "related_runbooks": [
+    "institution-verify-callback-timeout"
+  ],
+  "notes": [
+    "PRD 出现商户入驻、机构认证或机构号校验时，先定位到商户入驻能力，再下钻到机构号校验相关动作。"
+  ]
+}

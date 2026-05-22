@@ -1,0 +1,40 @@
+{
+  "type": "flow",
+  "id": "institution.verify.flow",
+  "title": "机构号校验技术流程",
+  "flow_type": "technical",
+  "steps": [
+    {
+      "name": "业务方发起校验",
+      "service": "institution-service",
+      "rpc": "InstitutionService.VerifyInstitution"
+    },
+    {
+      "name": "请求机构号中台",
+      "external_system": "institution-center"
+    },
+    {
+      "name": "机构号中台异步回调",
+      "service": "merchant-service",
+      "rpc": "MerchantService.SubmitInstitutionVerifyResult"
+    }
+  ],
+  "failure_points": [
+    "中台请求超时",
+    "回调丢失",
+    "重复回调"
+  ],
+  "related_capabilities": [
+    "merchant.onboarding"
+  ],
+  "related_actions": [
+    "institution.verify.start",
+    "institution.verify.callback"
+  ],
+  "related_integrations": [
+    "institution-center"
+  ],
+  "related_runbooks": [
+    "institution-verify-callback-timeout"
+  ]
+}
